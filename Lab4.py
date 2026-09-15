@@ -11,10 +11,6 @@ sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 
 import chromadb
 
-# Create ChromaDB client
-chroma_client = chromadb.PersistentClient(path='./ChromaDB_for_Lab')
-collection = chroma_client.get_or_create_collection(name="Lab4Collection")
-
 ### Using Chroma DB with OpenAI embeddings ###
 
 # Create OpenAI client
@@ -74,13 +70,19 @@ def load_pdfs_to_collection(folder_path, collection):
         loaded += 1
     return loaded
 
-# Check if collection is empty and load PDFs
-if collection.count() == 0:
-    loaded = load_pdfs_to_collection('./Lab-04-Data/', collection)
-
 #### Store the vector database collection in st.session_state.Lab4_VectorDB
 if 'Lab4_VectorDB' not in st.session_state:
+    # Create ChromaDB client
+    chroma_client = chromadb.PersistentClient(path='./ChromaDB_for_Lab')
+    collection = chroma_client.get_or_create_collection(name="Lab4Collection")
+
+    # Check if collection is empty and load PDFs
+    if collection.count() == 0:
+        loaded = load_pdfs_to_collection('./Lab-04-Data/', collection)
+
     st.session_state.Lab4_VectorDB = collection
+
+collection = st.session_state.Lab4_VectorDB
 
 #### MAIN APP ####
 st.title('Lab 4: Chatbot using RAG')
@@ -165,4 +167,3 @@ if prompt := st.chat_input('What would you like to know?'):
 
     # Add assistant response to chat history
     st.session_state.messages.append({'role': 'assistant', 'content': response})
-    
