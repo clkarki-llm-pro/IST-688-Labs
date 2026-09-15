@@ -85,67 +85,84 @@ if 'Lab4_VectorDB' not in st.session_state:
 #### MAIN APP ####
 st.title('Lab 4: Chatbot using RAG')
 
-#### QUERYING A COLLECTION -- ONLY USED FOR TESTING ####
-topic = st.sidebar.text_input('Topic', placeholder='Type your topic (e.g., GenAI)...')
-
-if topic:
+#### GET RELEVANT INFO FROM THE VECTOR DB ####
+# Embeds the user's question and returns the 3 closest syllabi
+def get_info_from_vectordb(collection, query):
     client = st.session_state.openai_client
     response = client.embeddings.create(
-        input=topic,
+        input=query,
         model='text-embedding-3-small')
 
     # Get the embedding
     query_embedding = response.data[0].embedding
 
-    # Get the text related to this question (this prompt)
     results = collection.query(
         query_embeddings=[query_embedding],
-        n_results=3  # The number of closest documents to return
+        n_results=3
     )
 
-    # Display the results
-    st.subheader(f'Results for: {topic}')
+    # Build one block of text out of the returned syllabi
+    documents = results['documents'][0]
+    ids = results['ids'][0]
 
-    for i in range(len(results['documents'][0])):
-        doc_id = results['ids'][0][i]
-        st.write(f'**{i+1}. {doc_id}**')
+    extra_info = ''
+    for doc_id, doc in zip(ids, documents):
+        extra_info += f'--- SYLLABUS: {doc_id} ---\n'
+        extra_info += doc[:6000] + '\n\n'
 
-else:
-    st.info('Enter a topic in the sidebar to search the collection')
+    return extra_info, ids
 
-# if "messages" not in st.session_state:
-#     st.session_state.messages = \
-#     [{"role": "assistant", "content": "How can I help you?"}]
 
-# #Display chat messages from history on app rerun
-# for msg in st.session_state.messages:
-#     chat_msg = st.chat_message(msg["role"])
-#     chat_msg.write(msg["content"])
+#### THE CHATBOT ####
+if 'messages' not in st.session_state:
+    st.session_state.messages = [
+        {'role': 'assistant', 'content': 'Ask me anything about the iSchool courses.'}
+    ]
 
-# # React to user input
-# if prompt := st.chat_input("What is up?"):
+# Display chat messages from history on app rerun
+for msg in st.session_state.messages:
+    chat_msg = st.chat_message(msg['role'])
+    chat_msg.write(msg['content'])
 
-#     # Add user message to chat history
-#     st.session_state.messages.append({"role": "user", "content": prompt})
+# React to user input
+if prompt := st.chat_input('What would you like to know?'):
 
-#     # Display user message in chat message container
-#     with st.chat_message("user"):
-#         st.markdown(prompt)
+    # Add user message to chat history
+    st.session_state.messages.append({'role': 'user', 'content': prompt})
 
-#     buffer = st.session_state.messages[-6:]
-#     while buffer and buffer[0]["role"] == "assistant":
-#         buffer = buffer[1:]
+    with st.chat_message('user'):
+        st.markdown(prompt)
 
-#     with st.chat_message("assistant"):
-#         try:
-#             if vendor == "openai":
-#                 stream = stream_openai(model_name, SYSTEM_PROMPT, buffer)
-#             else:
-#                 stream = stream_gemini(model_name, SYSTEM_PROMPT, buffer)
-#             response = st.write_stream(stream)
-#         except Exception as e:
-#             response = f"Sorry, something went wrong: {e}"
-#             st.error(response)
+    # Get the relevant syllabi for this question
+    extra_info, source_ids = get_info_from_vectordb(collection, prompt)
 
-#     # Add assistant response to chat history
-#     st.session_state.messages.append({"role": "assistant", "content": response})
+    system_prompt = (
+        'You are a course information assistant for the Syracuse iSchool. '
+        'Use the course syllabi below to answer the question.\n\n'
+        'Rules:\n'
+        '- When you use the syllabi, start your answer with "Based on the course syllabi:" '
+        'and name the file(s) you used.\n'
+        '- If the syllabi do not answer the question, say so, then start with '
+        '"Answering from general knowledge:" before continuing.\n'
+        '- Do not make up course numbers, instructors, or dates.\n\n'
+        'Course syllabi:\n' + extra_info
+    )
+
+    # Keep the last 6 messages as conversation memory
+    buffer = st.session_state.messages[-6:]
+    while buffer and buffer[0]['role'] == 'assistant':
+        buffer = buffer[1:]
+
+    # Get LLM response
+    with st.chat_message('assistant'):
+        client = st.session_state.openai_client
+        stream = client.chat.completions.create(
+            model='gpt-5-mini',
+            messages=[{'role': 'system', 'content': system_prompt}] + buffer,
+            stream=True,
+        )
+        response = st.write_stream(stream)
+
+    # Add assistant response to chat history
+    st.session_state.messages.append({'role': 'assistant', 'content': response})
+    

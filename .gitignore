@@ -1,4 +1,5 @@
 .streamlit/secrets.toml
+ChromaDB_for_Lab/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
