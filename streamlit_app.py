@@ -5,8 +5,9 @@ Lab1 = st.Page("Lab1.py", title="Lab 1", icon="🟠")
 Lab2 = st.Page("Lab2.py", title="Lab 2", icon="🟡")
 Lab3 = st.Page("Lab3.py", title="Lab 3", icon="🟠")
 Lab4 = st.Page("Lab4.py", title="Lab 4", icon="🟡")
-Lab5 = st.Page("Lab5.py", title="Lab 5", icon="🟠", default=True)
+Lab5 = st.Page("Lab5.py", title="Lab 5", icon="🟠")
+Lab6 = st.Page("Lab6.py", title="Lab 6", icon="🟡", default=True)
 
 # Lab3 is the default landing page.
-pg = st.navigation([Lab1, Lab2, Lab3, Lab4, Lab5])
+pg = st.navigation([Lab1, Lab2, Lab3, Lab4, Lab5, Lab6])
 pg.run()
