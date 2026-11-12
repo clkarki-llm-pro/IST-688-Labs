@@ -40,6 +40,23 @@ Search for "TODO" to find the four places you write code.
 # accuracy gain (recall and MRR were slightly lower than at 30). The extra
 # candidates are mostly irrelevant, so 30 is the better trade-off here.
 
+#
+# Step 13: A claim where the two answers differ
+# Claim: "Increased vessel density along with a reduction in fibrosis decreases
+# the efficacy of chemotherapy treatments."
+# Without re-ranking: NOT ENOUGH EVIDENCE. Stage 1's top 3 shared surface words
+# with the claim (chemotherapy, angiogenesis) but none actually tested it.
+# With re-ranking: REFUTED, citing [20888849]. That abstract shows that reducing
+# stromal tissue (fibrosis) increased vessel density and improved delivery of
+# the chemotherapy drug gemcitabine, which is the opposite of the claim.
+# The re-ranked answer is right. The difference came from retrieval, not the
+# LLM: with weak evidence, NOT ENOUGH EVIDENCE was a reasonable answer. The
+# cross-encoder reads the claim and chunk together, so it recognized that this
+# abstract addresses the claim even though it uses different wording ("stroma"
+# instead of "fibrosis"). It also shows that the re-ranker scores relevance,
+# not agreement: it promoted an abstract that contradicts the claim, because
+# evidence that refutes a claim is still relevant evidence.
+
 import json
 import time
 
@@ -63,7 +80,24 @@ EVAL_QUERIES = 100   # test claims used in Part C
 #   - tell the model to use only the abstracts in {context}
 #   - ask for a verdict: SUPPORTED, REFUTED, or NOT ENOUGH EVIDENCE
 #   - ask it to cite the abstracts it used by their [id]
-SYSTEM_TEMPLATE = "{context}"
+SYSTEM_TEMPLATE = """You are a careful scientific fact-checker. You will be given a claim and a
+few research abstracts. Each abstract starts with its id in square brackets, like [12345].
+
+Rules:
+- Use ONLY the abstracts below. Do not use outside knowledge, even if you know the topic.
+- Give exactly one verdict:
+  SUPPORTED if the abstracts give evidence that the claim is true,
+  REFUTED if the abstracts give evidence that the claim is false,
+  NOT ENOUGH EVIDENCE if the abstracts do not clearly address the claim.
+- Cite every abstract you relied on by its id, like [12345].
+
+Reply in this format:
+Verdict: <SUPPORTED, REFUTED, or NOT ENOUGH EVIDENCE>
+Explanation: <2-3 sentences, citing abstract ids>
+
+Abstracts:
+{context}
+"""
 
 
 # ---------- Given: loading ----------
@@ -218,9 +252,17 @@ def build_context(doc_ids):
 
 
 def verify_claim(claim, doc_ids):
-    """TODO (Part D): send SYSTEM_TEMPLATE (filled with build_context(doc_ids))
-    and the claim to CHAT_MODEL, and return the model's reply text."""
-    raise NotImplementedError("Part D")
+    """Ask CHAT_MODEL for a verdict on the claim, using only the given abstracts."""
+    client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+    system_prompt = SYSTEM_TEMPLATE.format(context=build_context(doc_ids))
+    response = client.chat.completions.create(
+        model=CHAT_MODEL,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Claim: {claim}"},
+        ],
+    )
+    return response.choices[0].message.content
 
 
 # ---------- UI ----------
@@ -296,8 +338,22 @@ def main():
         )
 
     # ----- Part D -----
-    # TODO (Part D): add a button that calls verify_claim() twice, once with before[:k]
-    # and once with after[:k], and shows the two answers in side-by-side columns.
+    if st.button("Verify claim with the LLM"):
+        with st.spinner("Asking the LLM twice (without and with re-ranking)..."):
+            try:
+                answer_before = verify_claim(claim, before[:k])
+                answer_after = verify_claim(claim, after[:k])
+            except Exception as error:
+                st.error(f"The LLM call failed. Check your API key and try again. ({error})")
+                st.stop()
+
+        left, right = st.columns(2)
+        with left:
+            st.subheader("Without re-ranking")
+            st.markdown(answer_before)
+        with right:
+            st.subheader("With re-ranking")
+            st.markdown(answer_after)
 
 
 if __name__ == "__main__":
