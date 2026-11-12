@@ -6,6 +6,21 @@ search. Stage 2 (yours) is a cross-encoder that re-scores the stage 1 candidates
 
 Search for "TODO" to find the four places you write code.
 """
+# # ---------- Lab answers ----------
+# Step 5a: Why does build_index() put the title in front of every chunk?
+# Long abstracts are split into chunks of about 120 words. Chunks from the
+# middle of an abstract often don't mention what the paper is about (e.g.
+# "dialysis rates were higher in..." without saying what caused it). Adding
+# the title gives every chunk that topic, so the search can match it to the
+# right claim instead of missing it.
+#
+# Step 5b: Why is to_doc_ids() needed?
+# The search ranks chunks, but one abstract can produce several chunks in the
+# results. to_doc_ids() turns the ranked chunks into a ranked list of unique
+# abstracts, keeping the search's order and skipping repeats. This matters
+# because (1) the LLM should get k different papers, not the same paper twice,
+# and (2) the answer key lists abstracts, not chunks, so we need abstract IDs
+# to check results and score recall and MRR.
 
 import json
 import time
@@ -121,16 +136,12 @@ def load_reranker():
 
 
 def rerank(index, query, hits):
-    """Re-score stage 1 hits with the cross-encoder, best first.
-
-    TODO (Part B):
-      1. Build a list of (query, chunk_text) pairs, one per hit.
-         The chunk text is index["texts"][chunk_index].
-      2. Score all pairs at once with load_reranker().predict(pairs).
-      3. Return the hits as [(chunk_index, reranker_score), ...], highest first.
-    """
-    return hits  # placeholder: no re-ranking yet, so both columns match
-
+    """Re-score stage 1 hits with the cross-encoder, best first."""
+    chunk_indexes = [chunk_index for chunk_index, _ in hits]
+    pairs = [(query, index["texts"][chunk_index]) for chunk_index in chunk_indexes]
+    scores = load_reranker().predict(pairs)
+    reranked = [(chunk_index, float(score)) for chunk_index, score in zip(chunk_indexes, scores)]
+    return sorted(reranked, key=lambda hit: hit[1], reverse=True)
 
 # ---------- Given: metrics ----------
 def recall_at_k(ranked, relevant, k):
