@@ -22,6 +22,24 @@ Search for "TODO" to find the four places you write code.
 # and (2) the answer key lists abstracts, not chunks, so we need abstract IDs
 # to check results and score recall and MRR.
 
+#
+# Step 10: Candidates sweep (100 claims, k=3, run in Codespaces)
+#   Candidates  Recall@3 before -> after   MRR before -> after   Added latency
+#   5           0.736 -> 0.736 (+0.000)    0.662 -> 0.700        433 ms/claim
+#   10          0.741 -> 0.752 (+0.012)    0.674 -> 0.711        903 ms/claim
+#   30          0.741 -> 0.772 (+0.032)    0.684 -> 0.750        3,490 ms/claim
+#   100         0.741 -> 0.767 (+0.027)    0.684 -> 0.749        10,359 ms/claim
+# Why re-ranking helps so little at 5: the re-ranker can only re-sort what
+# stage 1 gives it. Five chunks collapse to just 3-5 abstracts, so it is mostly
+# reshuffling the same papers, and Recall@3 ignores order within the top 3.
+# If the right abstract is not in those 5, the re-ranker can never find it.
+# MRR rose a little because the correct paper sometimes moved up a spot.
+# What it costs at 100: latency grows roughly in step with the number of
+# candidates, because the cross-encoder reads every (claim, chunk) pair. At
+# 100 it added about 10 seconds per claim, three times the cost of 30, with no
+# accuracy gain (recall and MRR were slightly lower than at 30). The extra
+# candidates are mostly irrelevant, so 30 is the better trade-off here.
+
 import json
 import time
 
@@ -159,16 +177,35 @@ def reciprocal_rank(ranked, relevant):
 
 # ---------- Part C: measure before and after ----------
 def evaluate(index, n_queries=EVAL_QUERIES, candidates=CANDIDATES, k=CONTEXT_K):
-    """Average recall@k, MRR and latency, with and without re-ranking.
+    """Average recall@k, MRR and latency, with and without re-ranking."""
+    _, queries, qrels = load_scifact()
+    query_ids = list(qrels)[:n_queries]
+    totals = {
+        "recall_before": 0.0, "recall_after": 0.0,
+        "rr_before": 0.0, "rr_after": 0.0,
+        "retrieve_ms": 0.0, "rerank_ms": 0.0,
+    }
 
-    TODO (Part C): for the first n_queries claims in qrels,
-      - run retrieve(), then rerank(), timing each with time.perf_counter()
-      - turn both hit lists into doc ids with to_doc_ids()
-      - score both with recall_at_k() and reciprocal_rank()
-    Return a dict of averages with these keys:
-      recall_before, recall_after, rr_before, rr_after, retrieve_ms, rerank_ms
-    """
-    raise NotImplementedError("Part C")
+    for query_id in query_ids:
+        claim = queries[query_id]
+        relevant = qrels[query_id]
+
+        start = time.perf_counter()
+        hits = retrieve(index, claim, candidates)
+        totals["retrieve_ms"] += (time.perf_counter() - start) * 1000
+
+        start = time.perf_counter()
+        reranked = rerank(index, claim, hits)
+        totals["rerank_ms"] += (time.perf_counter() - start) * 1000
+
+        before = to_doc_ids(index, hits)
+        after = to_doc_ids(index, reranked)
+        totals["recall_before"] += recall_at_k(before, relevant, k)
+        totals["recall_after"] += recall_at_k(after, relevant, k)
+        totals["rr_before"] += reciprocal_rank(before, relevant)
+        totals["rr_after"] += reciprocal_rank(after, relevant)
+
+    return {key: value / len(query_ids) for key, value in totals.items()}
 
 
 # ---------- Part D: generation ----------
@@ -232,8 +269,31 @@ def main():
     st.caption(f"Re-ranking {candidates} candidates took {rerank_ms:.0f} ms. ✅ = in the answer key.")
 
     # ----- Part C -----
-    # TODO (Part C): add a button that runs evaluate(index, EVAL_QUERIES, candidates, k)
-    # and shows Recall@k, MRR and added latency with st.metric (use delta= for the change).
+    if st.button("Run evaluation"):
+        with st.spinner(f"Testing {EVAL_QUERIES} claims with {candidates} candidates..."):
+            results = evaluate(index, EVAL_QUERIES, candidates, k)
+
+        recall_col, mrr_col, time_col = st.columns(3)
+        recall_col.metric(
+            f"Recall@{k}",
+            f"{results['recall_after']:.3f}",
+            delta=f"{results['recall_after'] - results['recall_before']:+.3f}",
+        )
+        mrr_col.metric(
+            "MRR",
+            f"{results['rr_after']:.3f}",
+            delta=f"{results['rr_after'] - results['rr_before']:+.3f}",
+        )
+        time_col.metric(
+            "Added latency",
+            f"{results['rerank_ms']:.0f} ms",
+            delta=f"+{results['rerank_ms']:.0f} ms",
+            delta_color="inverse",
+        )
+        st.caption(
+            f"Without re-ranking: Recall@{k} {results['recall_before']:.3f}, "
+            f"MRR {results['rr_before']:.3f}, search {results['retrieve_ms']:.0f} ms per claim."
+        )
 
     # ----- Part D -----
     # TODO (Part D): add a button that calls verify_claim() twice, once with before[:k]
