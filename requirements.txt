@@ -9,6 +9,7 @@ PyPDF2
 protobuf==3.20
 langchain
 langchain-openai
+openai-agents
 --extra-index-url https://download.pytorch.org/whl/cpu
 numpy
 torch
