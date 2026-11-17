@@ -257,39 +257,24 @@ if st.button('Get advice'):
                 st.write(f'handoff: {item.source_agent.name} -> {item.target_agent.name}')
 
 #### LAB QUESTIONS (Part D) ####
-# I ran "Syracuse, NY". Model requests: 7 · Tokens: 7,516 · Time: 53.2s
-# Answered by: Manager
+# I ran "Syracuse, NY"
+# Model requests: 7 | Tokens: 7,516 | Time: 53.2s
+# It was answered by Manager
 #
 # a. Which tools did the manager call, and in what order?
-#    1. weather_report, with {"input": "Syracuse, NY"}
-#    2. style_advice and activity_ideas. These two calls are listed back
-#       to back with no result between them, so the manager asked for
-#       both in the same turn and the SDK ran them in parallel. Both
-#       results came back after.
-#    get_weather is not in the list. The weather agent called it inside
-#    its own run, and new_items only shows the manager's run.
+# First it called weather_report with "Syracuse, NY". Then it called
+# style_advice and activity_ideas. get_weather does not show up because
+# the weather agent called it and not the manager.
 #
 # b. What did the manager send to the stylist: the full forecast from the
-#    tool, or a summary? Who wrote that text?
-#    A summary, not the forecast. The stylist got prose, not the dict from
-#    get_current_weather - humidity, precipitation, and the hourly
-#    descriptions were dropped. The weather agent's model wrote that
-#    summary from the tool's JSON. The manager's model then passed it on
-#    almost word for word (it matches the weather_report result) and sent
-#    the same text to activity_ideas.
-#    So the stylist is two model steps away from the real data, and
-#    errors carry through: the summary says "~39°F overnight rising to
-#    ~36°F at 06:00", which is falling, and both specialists got that
-#    mistake with no way to check it.
+# tool, or a summary? Who wrote that text?
+# It sent a summary, not the full forecast. The weather agent wrote the
+# summary from the tool's data, and the manager passed it on to the
+# stylist. So a model wrote that text.
 #
 # c. "Model requests" is higher than the number of tool calls you see.
-#    Where did the other model calls happen?
-#    I see 3 tool calls but 7 model requests. The others happened inside
-#    the specialist agents, which run their own loops that new_items does
-#    not show, plus the manager's own final answer:
-#      Manager        3 - call weather_report; call style_advice and
-#                         activity_ideas together; write the final answer
-#      Weather agent  2 - call get_weather; summarize the JSON
-#      Stylist agent  1 - write the clothing advice
-#      Activity agent 1 - write the activity ideas
-#    3 + 2 + 1 + 1 = 7, so usage counts every agent's requests.
+# Where did the other model calls happen?
+# I only see 3 tool calls, but there were 7 model requests. The extra
+# calls happened inside the specialist agents, because each one is its
+# own agent that makes its own model calls, and the manager also makes
+# a call to write the final answer.
